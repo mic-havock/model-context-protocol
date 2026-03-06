@@ -10,7 +10,9 @@
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import express from "express";
+import cors from "cors";
 import {
 	CallToolRequestSchema,
 	GetPromptRequestSchema,
@@ -473,12 +475,32 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
  * Start the server
  */
 async function main() {
-	const transport = new StdioServerTransport();
-	await server.connect(transport);
+	const app = express();
+	app.use(cors());
+	// express.json() is NOT applied to /message because SSEServerTransport.handlePostMessage handles body parsing natively.
 
-	console.error("MCP Demo Server running on stdio");
-	console.error("Available tools: calculate, get_weather, store_note, retrieve_notes, generate_uuid");
-	console.error("Available resources: system-info, notes-list");
+	let sseTransport: SSEServerTransport | null = null;
+
+	app.get("/sse", async (req, res) => {
+		console.log("New SSE connection established");
+		sseTransport = new SSEServerTransport("/message", res);
+		await server.connect(sseTransport);
+	});
+
+	app.post("/message", async (req, res) => {
+		if (!sseTransport) {
+			res.status(400).send("SSE connection not established");
+			return;
+		}
+		await sseTransport.handlePostMessage(req, res);
+	});
+
+	const PORT = process.env.PORT || 3001;
+	app.listen(PORT, () => {
+		console.log(`MCP Demo Server running on SSE at http://localhost:${PORT}/sse`);
+		console.log("Available tools: calculate, get_weather, store_note, retrieve_notes, generate_uuid");
+		console.log("Available resources: system-info, notes-list");
+	});
 }
 
 main().catch((error) => {
