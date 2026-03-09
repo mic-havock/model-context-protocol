@@ -10,7 +10,7 @@
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
 import cors from "cors";
 import {
@@ -477,27 +477,18 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
 async function main() {
 	const app = express();
 	app.use(cors());
-	// express.json() is NOT applied to /message because SSEServerTransport.handlePostMessage handles body parsing natively.
+	// express.json() is NOT applied to /mcp because StreamableHTTPServerTransport.handleRequest handles body parsing natively.
 
-	let sseTransport: SSEServerTransport | null = null;
+	const transport = new StreamableHTTPServerTransport();
+	await server.connect(transport);
 
-	app.get("/sse", async (req, res) => {
-		console.log("New SSE connection established");
-		sseTransport = new SSEServerTransport("/message", res);
-		await server.connect(sseTransport);
-	});
-
-	app.post("/message", async (req, res) => {
-		if (!sseTransport) {
-			res.status(400).send("SSE connection not established");
-			return;
-		}
-		await sseTransport.handlePostMessage(req, res);
+	app.all("/mcp", async (req, res) => {
+		await transport.handleRequest(req, res);
 	});
 
 	const PORT = process.env.PORT || 3001;
 	app.listen(PORT, () => {
-		console.log(`MCP Demo Server running on SSE at http://localhost:${PORT}/sse`);
+		console.log(`MCP Demo Server running on Streamable HTTP at http://localhost:${PORT}/mcp`);
 		console.log("Available tools: calculate, get_weather, store_note, retrieve_notes, generate_uuid");
 		console.log("Available resources: system-info, notes-list");
 	});
